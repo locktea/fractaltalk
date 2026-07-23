@@ -1,0 +1,7 @@
+[
+	{"username": "coo", "email": "coo@fractaltalk.com", "password": "LOCAL_PASSWORD_PLACEHOLDER", "role": "COO", "promptFile": "coo-prompt.txt"},
+	{"username": "cto", "email": "cto@fractaltalk.com", "password": "LOCAL_PASSWORD_PLACEHOLDER", "role": "CTO", "promptFile": "cto-prompt.txt"},
+	{"username": "cpo", "email": "cpo@fractaltalk.com", "password": "LOCAL_PASSWORD_PLACEHOLDER", "role": "CPO", "promptFile": "cpo-prompt.txt"},
+	{"username": "cmo", "email": "cmo@fractaltalk.com", "password": "LOCAL_PASSWORD_PLACEHOLDER", "role": "CMO", "promptFile": "cmo-prompt.txt"},
+	{"username": "CFO", "email": "cfo@fractaltalk.com", "password": "LOCAL_PASSWORD_PLACEHOLDER", "role": "CFO", "promptFile": "cfo-prompt.txt"}
+]

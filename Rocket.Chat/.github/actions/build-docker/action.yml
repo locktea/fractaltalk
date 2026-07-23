@@ -1,0 +1,122 @@
+name: 'Build Docker'
+
+inputs:
+  CR_USER:
+    required: true
+  CR_PAT:
+    required: true
+  deno-version:
+    required: true
+    description: 'Deno version'
+    type: string
+  arch:
+    required: false
+    description: 'Architecture'
+    default: 'arm64'
+  service:
+    required: false
+    description: 'Container to build'
+    type: string
+  publish-image:
+    required: false
+    description: 'Publish image'
+    default: 'true'
+  setup-docker:
+    required: false
+    description: 'Setup Docker'
+    default: true
+  type:
+    required: false
+    description: 'production or coverage'
+    default: 'coverage'
+
+runs:
+  using: composite
+
+  steps:
+    - name: Login to GitHub Container Registry
+      if: inputs.publish-image == 'true' && github.actor != 'dependabot[bot]' && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'release' || github.ref == 'refs/heads/develop')
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ inputs.CR_USER }}
+        password: ${{ inputs.CR_PAT }}
+
+    - name: Restore meteor build
+      if: inputs.service == 'rocketchat'
+      uses: actions/download-artifact@v6
+      with:
+        name: build-${{ inputs.type }}
+        path: /tmp/build
+
+    - name: Unpack meteor build
+      if: inputs.service == 'rocketchat'
+      shell: bash
+      run: |
+        cd /tmp/build
+        tar xzf Rocket.Chat.tar.gz
+        rm Rocket.Chat.tar.gz
+
+    - name: Set up Docker
+      if: inputs.setup-docker == true
+      uses: docker/setup-docker-action@v4
+      with:
+        daemon-config: |
+          {
+            "debug": false,
+            "features": {
+              "containerd-snapshotter": true
+            }
+          }
+
+    - name: Build Docker images
+      shell: bash
+      run: |
+        set -o xtrace
+        export DENO_VERSION="${{ inputs.deno-version }}"
+
+        if [[ "${{ inputs.publish-image }}" == 'true' ]]; then
+          LOAD_OR_PUSH="--push"
+        else
+          LOAD_OR_PUSH="--load"
+        fi
+
+        # Get image name from docker-compose-ci.yml since rocketchat image is different from service name (rocket.chat)
+        IMAGE=$(docker compose -f docker-compose-ci.yml config --format json 2>/dev/null | jq -r --arg s "${{ inputs.service }}" '.services[$s].image')
+
+        docker buildx bake \
+          -f docker-compose-ci.yml \
+          ${LOAD_OR_PUSH} \
+          --allow=fs.read=/tmp/build \
+          --set "*.tags+=${IMAGE}-gha-run-${{ github.run_id }}" \
+          --set "*.labels.org.opencontainers.image.description=Build run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          --set *.platform=linux/${{ inputs.arch }} \
+          --set *.cache-from=type=gha \
+          --set *.cache-to=type=gha,mode=max \
+          --provenance=false \
+          --sbom=false \
+          --metadata-file "/tmp/meta.json" \
+          "${{ inputs.service }}"
+
+        echo "Contents of /tmp/meta.json:"
+        cat /tmp/meta.json
+
+        SERVICE_SUFFIX=${{ inputs.service == 'rocketchat' && inputs.type == 'coverage' && (github.event_name == 'release' || github.ref == 'refs/heads/develop') && '-cov' || '' }}
+
+        mkdir -p /tmp/digests/${{ inputs.service }}${SERVICE_SUFFIX}/${{ inputs.arch }}
+        DIGEST=$(jq -r '.["${{ inputs.service }}"].["containerimage.digest"]' "/tmp/meta.json")
+        IMAGE_NO_TAG=$(echo "$IMAGE"  | sed 's/:.*$//')
+        echo "${IMAGE_NO_TAG}@${DIGEST}" > "/tmp/digests/${{ inputs.service }}${SERVICE_SUFFIX}/${{ inputs.arch }}/digest.txt"
+
+    - uses: actions/upload-artifact@v4
+      if: inputs.publish-image == 'true'
+      with:
+        name: digests-${{ inputs.service }}-${{ inputs.arch }}-${{ inputs.type }}
+        path: /tmp/digests
+        retention-days: 5
+
+    - name: Clean up temporary files
+      if: inputs.service == 'rocketchat'
+      shell: bash
+      run: |
+        sudo rm -rf /tmp/build

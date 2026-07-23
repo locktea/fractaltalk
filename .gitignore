@@ -1,0 +1,8 @@
+.env
+backups/
+dump/
+users.seed.json
+leadership-users.seed.json
+leadership-data*.json
+node_modules/
+.DS_Store
